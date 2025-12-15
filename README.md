@@ -34,8 +34,7 @@ Tampermonkey-скрипт для **массовой архивации чато�
 
 3. Скопируй содержимое файла [`index.js`](index.js) в редактор Tampermonkey и сохрани (Ctrl+S).
 
-4. Открой OpenWebUI:
-   - `https://llm.ivol.pro/`
+4. Открой свой OpenWebUI (тот домен, где он у тебя установлен).
 
 ### Использование
 
@@ -100,8 +99,7 @@ Goal: quickly clean up the left chat history sidebar by archiving **“Previous 
 
 3. Copy the contents of [`index.js`](index.js) into the Tampermonkey editor and save (Ctrl+S).
 
-4. Open OpenWebUI:
-   - `https://llm.ivol.pro/`
+4. Open your OpenWebUI instance (the domain where you installed it).
 
 ### Usage
 

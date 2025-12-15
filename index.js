@@ -9,7 +9,7 @@
 // @namespace    oiv-an.openwebui-auto-archive
 // @version      0.2.0
 // @description  Bulk-archive OpenWebUI chats from "Previous 30 days" and month sections below (UI automation)
-// @match        https://llm.ivol.pro/*
+// @match        https://YOUR-OPENWEBUI-DOMAIN/*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
