@@ -110,28 +110,28 @@
 
   const findArchiveTargetsFrom30DaysAndOlder = (sidebarEl) => {
     // Logic:
-    // 1) Find "Previous 30 days" header
+    // 1) Find the "Previous 30 days" header (RU UI: "Предыдущие 30 дней")
     // 2) Take all sections BELOW it that are:
-    //    - month headers (Октябрь/Ноябрь/...) OR any other non-relative headers
+    //    - month headers (RU months) OR any other non-relative headers
     // 3) For each such section, take chat groups between this header and the next header
     const headers = getSidebarSectionHeaders(sidebarEl);
     const start = headers.find((h) => textNorm(h.textContent) === 'предыдущие 30 дней');
     if (!start) return { headers: [], groups: [] };
 
     const startIdx = headers.indexOf(start);
-    const tailHeaders = headers.slice(startIdx); // включая "30 дней"
+    const tailHeaders = headers.slice(startIdx); // includes "Previous 30 days"
 
     const targetHeaders = tailHeaders.filter((h, idx) => {
-      if (idx === 0) return true; // сама секция "30 дней" — тоже цель
+      if (idx === 0) return true; // include the "Previous 30 days" section itself
       const t = h.textContent || '';
-      // месяцы — цель
+      // month sections are targets
       if (isMonthHeaderRu(t)) return true;
-      // любые "не относительные" заголовки ниже 30 дней — тоже цель (на случай другой локали/формата)
+      // any other non-relative headers below are also targets (fallback)
       if (!isRelativeHeader(t)) return true;
       return false;
     });
 
-    // Собираем группы по каждой целевой секции
+    // Collect chat groups for each target section
     const groups = [];
     for (let i = 0; i < targetHeaders.length; i++) {
       const h = targetHeaders[i];
@@ -140,18 +140,18 @@
       groups.push(...sectionGroups);
     }
 
-    // Убираем дубликаты (на всякий случай)
+    // De-duplicate (just in case)
     const uniq = Array.from(new Set(groups));
     return { headers: targetHeaders, groups: uniq };
   };
 
   const findMenuButtonInGroup = (groupEl) => {
-    // Кнопка меню: button[aria-label="Chat Menu"]
+    // Menu button: button[aria-label="Chat Menu"]
     return groupEl.querySelector('button[aria-label="Chat Menu"]');
   };
 
   const findOpenMenuRoot = () => {
-    // Меню рендерится как div[role="menu"][data-state="open"]
+    // Menu root: div[role="menu"][data-state="open"]
     return document.querySelector('div[role="menu"][data-state="open"]');
   };
 
@@ -162,7 +162,7 @@
   };
 
   const closeAnyMenu = () => {
-    // Клик в пустоту, чтобы закрыть меню
+    // Click on the page to close any open menu
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -317,7 +317,7 @@
         continue;
       }
 
-      // Жесткая проверка: этот group всё ещё входит в текущие цели
+      // Hard check: ensure this group is still within the current target set
       const currentTargets = header30
         ? findArchiveTargetsFrom30DaysAndOlder(sidebar)
         : findArchiveTargetsMonthsOnly(sidebar);
@@ -375,23 +375,23 @@
 
       await sleep(CFG.delayBetweenChatsMs);
 
-      // После архивации DOM меняется — пересчитываем цели заново
+      // After archiving, the DOM changes — recompute targets
       targets = header30 ? findArchiveTargetsFrom30DaysAndOlder(sidebar) : findArchiveTargetsMonthsOnly(sidebar);
       groups = targets.groups;
       if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
 
-      // Чтобы не пропускать элементы при сжатии списка
+      // Avoid skipping items when the list shrinks
       i = Math.max(-1, i - 1);
     }
   };
 
-  // Инициализация
+  // Init
   const boot = () => {
     if (document.getElementById('ivol-owui-archive-ui')) return;
     createFloatingUI();
   };
 
-  // Ждем, пока появится сайдбар
+  // Keep UI injected even if OpenWebUI re-renders
   const start = () => {
     boot();
     const obs = new MutationObserver(() => boot());
