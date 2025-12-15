@@ -1,63 +1,62 @@
 # OpenWebUI Auto Archive (Tampermonkey)
 
-Tampermonkey-скрипт для **массовой архивации чатов** в OpenWebUI через UI: открывает меню (три точки) у каждого чата и нажимает **«Архив»**.
+A Tampermonkey userscript for **bulk archiving chats** in OpenWebUI via the UI: it opens the chat menu (three dots) and clicks **“Archive”**.
 
-Цель: быстро очистить левую колонку истории, отправив в архив **чаты из “Предыдущие 30 дней” и секций по месяцам ниже**.
+Goal: quickly clean up the left chat history sidebar by archiving **“Previous 30 days” and all month sections below**.
 
-## Авторы
+## Authors
 
 - Ivan Olyanskiy
 - Assisted by ChatGPT 5.2
 
-## Название проекта
+## Project name
 
-**openwebui-auto-archive** — коротко и по делу.
+**openwebui-auto-archive** — short and to the point.
 
-## Что делает
+## What it does
 
-- На странице OpenWebUI добавляет плавающую кнопку **«📦 Архив: 30 дней»**.
-- При запуске:
-  - находит секцию **«Предыдущие 30 дней»** в левом сайдбаре,
-  - берёт **только** чаты, которые находятся **между** заголовком этой секции и **следующим заголовком**,
-  - для каждого чата: открывает меню → жмёт **«Архив»**,
-  - пересчитывает список после каждого действия (чтобы не пропускать элементы).
+- Adds a floating button **“📦 Archive: old (30d + months)”** on the OpenWebUI page.
+- When started:
+  - targets chats in **“Previous 30 days”** and **month sections below** (e.g. November, October, …),
+  - for each chat: opens the menu → clicks **“Archive”**,
+  - re-reads the list after each action to avoid skipping items.
 
-## Установка
+## Installation
 
-1. Установи расширение Tampermonkey:
-   - Chrome Web Store: https://www.tampermonkey.net/
+1. Install Tampermonkey:
+   - https://www.tampermonkey.net/
 
-2. Создай новый userscript:
+2. Create a new userscript:
    - Tampermonkey → **Create a new script**
 
-3. Скопируй содержимое файла [`index.js`](index.js) в редактор Tampermonkey и сохрани (Ctrl+S).
+3. Copy the contents of [`index.js`](index.js) into the Tampermonkey editor and save (Ctrl+S).
 
-4. Открой OpenWebUI:
+4. Open OpenWebUI:
    - `https://llm.ivol.pro/`
 
-## Использование
+## Usage
 
-1. Открой левый сайдбар со списком чатов.
-2. Прокрути так, чтобы была видна секция **«Предыдущие 30 дней»**.
-3. Нажми кнопку **«📦 Архив: 30 дней»**.
-4. Чтобы остановить — нажми **«⛔ Стоп»**.
+1. Open the left sidebar with the chat list.
+2. Scroll so the month sections are loaded (and “Previous 30 days” if it exists).
+3. Click **“📦 Archive: old (30d + months)”**.
+4. To stop, click **“⛔ Stop”**.
 
-## Настройки
+## Configuration
 
-Вверху файла [`index.js`](index.js) есть объект `CFG`:
+At the top of [`index.js`](index.js) there is a `CFG` object:
 
-- `delayBetweenChatsMs` — пауза между чатами
-- `delayAfterMenuOpenMs` — пауза после открытия меню
-- `delayAfterArchiveClickMs` — пауза после клика «Архив»
-- `maxChatsSafetyLimit` — предохранитель по количеству
-- `debug` — логирование в консоль
+- `delayBetweenChatsMs` — delay between chats
+- `delayAfterMenuOpenMs` — delay after opening the menu
+- `delayAfterArchiveClickMs` — delay after clicking “Archive”
+- `maxChatsSafetyLimit` — safety limit
+- `debug` — console logging
 
-## Ограничения / важные замечания
+## Notes / limitations
 
-- Скрипт кликает по UI, поэтому зависит от верстки OpenWebUI.
-- Если OpenWebUI обновится и поменяет классы/структуру — потребуется правка селекторов.
-- Скрипт не использует API, только имитирует действия пользователя.
+- This script clicks the UI, so it depends on OpenWebUI DOM structure.
+- If OpenWebUI updates and changes selectors/structure, the script may need adjustments.
+- No API calls are used — it only simulates user actions.
 
-## Лицензия
+## License
 
-MIT — см. [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).

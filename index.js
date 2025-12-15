@@ -1,8 +1,14 @@
+/*
+  Authors:
+  - Ivan Olyanskiy
+  - Assisted by ChatGPT 5.2
+*/
+
 // ==UserScript==
-// @name         OpenWebUI - Archive chats (Previous 30 days)
-// @namespace    ivol.openwebui.archive
-// @version      0.1.0
-// @description  Архивирует все чаты из секции "Предыдущие 30 дней" в левом сайдбаре OpenWebUI
+// @name         OpenWebUI Auto Archive (30d + months)
+// @namespace    oiv-an.openwebui-auto-archive
+// @version      0.2.0
+// @description  Bulk-archive OpenWebUI chats from "Previous 30 days" and month sections below (UI automation)
 // @match        https://llm.ivol.pro/*
 // @run-at       document-idle
 // @grant        none
@@ -12,8 +18,8 @@
   'use strict';
 
   const CFG = {
-    buttonText: '📦 Архив: старые (30д + месяцы)',
-    stopText: '⛔ Стоп',
+    buttonText: '📦 Archive: old (30d + months)',
+    stopText: '⛔ Stop',
     delayBetweenChatsMs: 350,
     delayAfterMenuOpenMs: 120,
     delayAfterArchiveClickMs: 250,
@@ -37,23 +43,22 @@
 
   const textNorm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+  // Legacy helper (kept for compatibility / debugging)
   const findHeaderNode = () => {
-    // Ищем заголовок секции по тексту "Предыдущие 30 дней"
     const candidates = Array.from(document.querySelectorAll('div'));
     const target = candidates.find((el) => textNorm(el.textContent) === 'предыдущие 30 дней');
     return target || null;
   };
 
   const getSidebarScrollContainer = () => {
-    // В твоем HTML список чатов живет внутри: div.flex-1.flex.flex-col.overflow-y-auto.scrollbar-hidden
-    // Берем первый подходящий контейнер (в левом сайдбаре).
+    // Chat list container in the left sidebar
     return document.querySelector('div.flex-1.flex.flex-col.overflow-y-auto.scrollbar-hidden');
   };
 
   const getSidebarSectionHeaders = (sidebarEl) => {
     if (!sidebarEl) return [];
-    // Заголовки секций у тебя выглядят как:
-    // <div class="w-full pl-2.5 text-xs text-gray-500 ... font-medium ...">Предыдущие 30 дней</div>
+    // Section headers look like:
+    // <div class="w-full pl-2.5 text-xs text-gray-500 ... font-medium ...">Previous 30 days</div>
     return Array.from(sidebarEl.querySelectorAll('div.w-full.pl-2\\.5.text-xs.text-gray-500.font-medium'));
   };
 
@@ -64,13 +69,13 @@
   };
 
   const isMonthHeaderRu = (txt) => {
-    // Примеры: "Октябрь", "Ноябрь", "Декабрь" (возможны "Октябрь 2025")
+    // Examples: "Октябрь", "Ноябрь", "Декабрь" (optionally "Октябрь 2025")
     const t = textNorm(txt);
     return /^(январь|февраль|март|апрель|май|июнь|июль|август|сентябрь|октябрь|ноябрь|декабрь)(\s+\d{4})?$/.test(t);
   };
 
   const isRelativeHeader = (txt) => {
-    // "Сегодня", "Предыдущие 7 дней", "Предыдущие 30 дней", "Закреплено" и т.п.
+    // "Today", "Previous 7 days", "Previous 30 days", "Pinned" (RU UI in your instance)
     const t = textNorm(txt);
     return (
       t === 'сегодня' ||
@@ -104,11 +109,11 @@
   };
 
   const findArchiveTargetsFrom30DaysAndOlder = (sidebarEl) => {
-    // Логика:
-    // 1) Находим заголовок "Предыдущие 30 дней"
-    // 2) Берем все секции НИЖЕ него, которые являются:
-    //    - месяцы (Октябрь/Ноябрь/...) ИЛИ любые другие заголовки, которые не "Сегодня/7 дней/30 дней/Закреплено"
-    // 3) Для каждой такой секции берем чаты между этим заголовком и следующим заголовком
+    // Logic:
+    // 1) Find "Previous 30 days" header
+    // 2) Take all sections BELOW it that are:
+    //    - month headers (Октябрь/Ноябрь/...) OR any other non-relative headers
+    // 3) For each such section, take chat groups between this header and the next header
     const headers = getSidebarSectionHeaders(sidebarEl);
     const start = headers.find((h) => textNorm(h.textContent) === 'предыдущие 30 дней');
     if (!start) return { headers: [], groups: [] };
@@ -218,11 +223,11 @@
 
     const render = () => {
       stat.innerHTML = `
-        <div><b>OWUI Архиватор</b></div>
-        <div>Статус: ${state.running ? 'работает' : 'ожидает'}</div>
-        <div>Обработано: ${state.processed}</div>
-        <div>Пропущено: ${state.skipped}</div>
-        <div>Ошибки: ${state.errors}</div>
+        <div><b>OpenWebUI Auto Archive</b></div>
+        <div>Status: ${state.running ? 'running' : 'idle'}</div>
+        <div>Processed: ${state.processed}</div>
+        <div>Skipped: ${state.skipped}</div>
+        <div>Errors: ${state.errors}</div>
         ${state.lastError ? `<div style="margin-top:6px;color:#991b1b;">${state.lastError}</div>` : ''}
       `;
     };
@@ -254,7 +259,7 @@
 
     stop.addEventListener('click', () => {
       state.running = false;
-      state.lastError = 'Остановлено пользователем';
+      state.lastError = 'Stopped by user';
       render();
     });
 
@@ -279,10 +284,10 @@
   const archivePrevious30Days = async (render) => {
     const sidebar = getSidebarScrollContainer();
     if (!sidebar) {
-      throw new Error('Не нашел контейнер сайдбара со списком чатов. Открой левую колонку с историей.');
+      throw new Error('Sidebar chat list container not found. Make sure the left sidebar is open.');
     }
 
-    // Если "Предыдущие 30 дней" уже отсутствует/пусто — работаем только по месячным секциям.
+    // If "Previous 30 days" is missing/empty — run months-only mode.
     const header30 = findSectionHeaderInSidebar(sidebar, 'Предыдущие 30 дней');
 
     if (header30) {
@@ -294,7 +299,7 @@
     let groups = targets.groups;
 
     if (!groups.length) {
-      throw new Error('Не нашел чаты для архивации (месяцы / старые секции). Возможно, список еще не прогрузился или уже всё в архиве.');
+      throw new Error('No chats found to archive (months / older sections). Either not loaded yet or already archived.');
     }
 
     if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
@@ -350,7 +355,7 @@
 
         if (!archiveItem2) {
           state.errors += 1;
-          state.lastError = 'Не нашел пункт "Архив" в меню. Возможно, локализация/верстка отличается.';
+          state.lastError = 'Could not find "Archive" menu item. UI/locale/DOM may have changed.';
           render();
           closeAnyMenu();
           await sleep(150);
