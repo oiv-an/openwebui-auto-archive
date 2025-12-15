@@ -32,9 +32,16 @@ Tampermonkey-скрипт для **массовой архивации чато�
 2. Создай новый userscript:
    - Tampermonkey → **Create a new script**
 
-3. Скопируй содержимое файла [`index.js`](index.js) в редактор Tampermonkey и сохрани (Ctrl+S).
+3. Скопируй содержимое файла [`index.js`](index.js) в редактор Tampermonkey.
 
-4. Открой свой OpenWebUI (тот домен, где он у тебя установлен).
+4. В самом верху userscript (в шапке) замени строку:
+   - `// @match        https://YOUR-OPENWEBUI-DOMAIN/*`
+   на свой домен OpenWebUI, например:
+   - `// @match        https://openwebui.example.com/*`
+
+5. Сохрани скрипт (Ctrl+S).
+
+6. Открой свой OpenWebUI (тот домен, где он у тебя установлен).
 
 ### Использование
 
@@ -97,9 +104,16 @@ Goal: quickly clean up the left chat history sidebar by archiving **“Previous 
 2. Create a new userscript:
    - Tampermonkey → **Create a new script**
 
-3. Copy the contents of [`index.js`](index.js) into the Tampermonkey editor and save (Ctrl+S).
+3. Copy the contents of [`index.js`](index.js) into the Tampermonkey editor.
 
-4. Open your OpenWebUI instance (the domain where you installed it).
+4. At the very top of the userscript (header), replace:
+   - `// @match        https://YOUR-OPENWEBUI-DOMAIN/*`
+   with your OpenWebUI domain, for example:
+   - `// @match        https://openwebui.example.com/*`
+
+5. Save the script (Ctrl+S).
+
+6. Open your OpenWebUI instance (the domain where you installed it).
 
 ### Usage
 
