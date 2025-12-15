@@ -12,12 +12,12 @@
   'use strict';
 
   const CFG = {
-    buttonText: '📦 Архив: 30 дней',
+    buttonText: '📦 Архив: старые (30д + месяцы)',
     stopText: '⛔ Стоп',
     delayBetweenChatsMs: 350,
     delayAfterMenuOpenMs: 120,
     delayAfterArchiveClickMs: 250,
-    maxChatsSafetyLimit: 500,
+    maxChatsSafetyLimit: 800,
     debug: false,
   };
 
@@ -50,42 +50,94 @@
     return document.querySelector('div.flex-1.flex.flex-col.overflow-y-auto.scrollbar-hidden');
   };
 
+  const getSidebarSectionHeaders = (sidebarEl) => {
+    if (!sidebarEl) return [];
+    // Заголовки секций у тебя выглядят как:
+    // <div class="w-full pl-2.5 text-xs text-gray-500 ... font-medium ...">Предыдущие 30 дней</div>
+    return Array.from(sidebarEl.querySelectorAll('div.w-full.pl-2\\.5.text-xs.text-gray-500.font-medium'));
+  };
+
   const findSectionHeaderInSidebar = (sidebarEl, title) => {
     if (!sidebarEl) return null;
-    const nodes = Array.from(sidebarEl.querySelectorAll('div'));
-    return nodes.find((el) => textNorm(el.textContent) === textNorm(title)) || null;
+    const headers = getSidebarSectionHeaders(sidebarEl);
+    return headers.find((el) => textNorm(el.textContent) === textNorm(title)) || null;
+  };
+
+  const isMonthHeaderRu = (txt) => {
+    // Примеры: "Октябрь", "Ноябрь", "Декабрь" (возможны "Октябрь 2025")
+    const t = textNorm(txt);
+    return /^(январь|февраль|март|апрель|май|июнь|июль|август|сентябрь|октябрь|ноябрь|декабрь)(\s+\d{4})?$/.test(t);
+  };
+
+  const isRelativeHeader = (txt) => {
+    // "Сегодня", "Предыдущие 7 дней", "Предыдущие 30 дней", "Закреплено" и т.п.
+    const t = textNorm(txt);
+    return (
+      t === 'сегодня' ||
+      t === 'закреплено' ||
+      /^предыдущие\s+\d+\s+д(ень|ня|ней)$/.test(t)
+    );
+  };
+
+  const findChatGroupsBetweenHeaders = (sidebarEl, startHeaderEl, endHeaderEl) => {
+    if (!sidebarEl || !startHeaderEl) return [];
+    const allGroups = Array.from(sidebarEl.querySelectorAll('div#sidebar-chat-group'));
+
+    return allGroups.filter((g) => {
+      const afterStart = startHeaderEl.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING;
+      if (!afterStart) return false;
+
+      if (!endHeaderEl) return true;
+
+      const beforeEnd = g.compareDocumentPosition(endHeaderEl) & Node.DOCUMENT_POSITION_FOLLOWING;
+      return !!beforeEnd;
+    });
   };
 
   const findChatGroupsInSection = (sidebarEl, sectionTitle) => {
-    // Критично: берем ТОЛЬКО элементы между заголовком sectionTitle и следующим заголовком секции.
-    // Заголовки секций у тебя выглядят как:
-    // <div class="w-full pl-2.5 text-xs text-gray-500 ... font-medium ...">Предыдущие 30 дней</div>
-    if (!sidebarEl) return [];
-
-    const headers = Array.from(
-      sidebarEl.querySelectorAll('div.w-full.pl-2\\.5.text-xs.text-gray-500.font-medium')
-    );
-
+    const headers = getSidebarSectionHeaders(sidebarEl);
     const startHeader = headers.find((h) => textNorm(h.textContent) === textNorm(sectionTitle));
     if (!startHeader) return [];
-
     const startIdx = headers.indexOf(startHeader);
     const endHeader = headers[startIdx + 1] || null;
+    return findChatGroupsBetweenHeaders(sidebarEl, startHeader, endHeader);
+  };
 
-    const allGroups = Array.from(sidebarEl.querySelectorAll('div#sidebar-chat-group'));
+  const findArchiveTargetsFrom30DaysAndOlder = (sidebarEl) => {
+    // Логика:
+    // 1) Находим заголовок "Предыдущие 30 дней"
+    // 2) Берем все секции НИЖЕ него, которые являются:
+    //    - месяцы (Октябрь/Ноябрь/...) ИЛИ любые другие заголовки, которые не "Сегодня/7 дней/30 дней/Закреплено"
+    // 3) Для каждой такой секции берем чаты между этим заголовком и следующим заголовком
+    const headers = getSidebarSectionHeaders(sidebarEl);
+    const start = headers.find((h) => textNorm(h.textContent) === 'предыдущие 30 дней');
+    if (!start) return { headers: [], groups: [] };
 
-    const inRange = allGroups.filter((g) => {
-      const afterStart = startHeader.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING;
-      if (!afterStart) return false;
+    const startIdx = headers.indexOf(start);
+    const tailHeaders = headers.slice(startIdx); // включая "30 дней"
 
-      if (!endHeader) return true;
-
-      const beforeEnd = g.compareDocumentPosition(endHeader) & Node.DOCUMENT_POSITION_FOLLOWING;
-      // g должен быть ДО endHeader => endHeader следует после g
-      return !!beforeEnd;
+    const targetHeaders = tailHeaders.filter((h, idx) => {
+      if (idx === 0) return true; // сама секция "30 дней" — тоже цель
+      const t = h.textContent || '';
+      // месяцы — цель
+      if (isMonthHeaderRu(t)) return true;
+      // любые "не относительные" заголовки ниже 30 дней — тоже цель (на случай другой локали/формата)
+      if (!isRelativeHeader(t)) return true;
+      return false;
     });
 
-    return inRange;
+    // Собираем группы по каждой целевой секции
+    const groups = [];
+    for (let i = 0; i < targetHeaders.length; i++) {
+      const h = targetHeaders[i];
+      const end = targetHeaders[i + 1] || null;
+      const sectionGroups = findChatGroupsBetweenHeaders(sidebarEl, h, end);
+      groups.push(...sectionGroups);
+    }
+
+    // Убираем дубликаты (на всякий случай)
+    const uniq = Array.from(new Set(groups));
+    return { headers: targetHeaders, groups: uniq };
   };
 
   const findMenuButtonInGroup = (groupEl) => {
@@ -212,28 +264,42 @@
     document.body.appendChild(wrap);
   };
 
+  const findArchiveTargetsMonthsOnly = (sidebarEl) => {
+    const headers = getSidebarSectionHeaders(sidebarEl);
+    const monthHeaders = headers.filter((h) => isMonthHeaderRu(h.textContent || ''));
+    const groups = [];
+    for (let i = 0; i < monthHeaders.length; i++) {
+      const h = monthHeaders[i];
+      const end = monthHeaders[i + 1] || null;
+      groups.push(...findChatGroupsBetweenHeaders(sidebarEl, h, end));
+    }
+    return { headers: monthHeaders, groups: Array.from(new Set(groups)) };
+  };
+
   const archivePrevious30Days = async (render) => {
     const sidebar = getSidebarScrollContainer();
     if (!sidebar) {
       throw new Error('Не нашел контейнер сайдбара со списком чатов. Открой левую колонку с историей.');
     }
 
-    const header = findSectionHeaderInSidebar(sidebar, 'Предыдущие 30 дней');
-    if (!header) {
-      throw new Error('Не нашел заголовок "Предыдущие 30 дней" внутри сайдбара. Проверь, что секция видна.');
+    // Если "Предыдущие 30 дней" уже отсутствует/пусто — работаем только по месячным секциям.
+    const header30 = findSectionHeaderInSidebar(sidebar, 'Предыдущие 30 дней');
+
+    if (header30) {
+      header30.scrollIntoView({ block: 'center' });
+      await sleep(150);
     }
 
-    header.scrollIntoView({ block: 'center' });
-    await sleep(150);
+    let targets = header30 ? findArchiveTargetsFrom30DaysAndOlder(sidebar) : findArchiveTargetsMonthsOnly(sidebar);
+    let groups = targets.groups;
 
-    let groups = findChatGroupsInSection(sidebar, 'Предыдущие 30 дней');
     if (!groups.length) {
-      throw new Error('Не нашел чаты ВНУТРИ секции "Предыдущие 30 дней". Возможно, список еще не прогрузился.');
+      throw new Error('Не нашел чаты для архивации (месяцы / старые секции). Возможно, список еще не прогрузился или уже всё в архиве.');
     }
 
     if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
 
-    log('Found groups in section:', groups.length);
+    log('Found groups (30d + months OR months-only):', groups.length);
 
     for (let i = 0; i < groups.length; i++) {
       if (!state.running) break;
@@ -246,10 +312,12 @@
         continue;
       }
 
-      // Жесткая проверка: этот group реально находится между заголовками секции
-      // (на случай, если DOM перерисовался)
-      const currentGroups = findChatGroupsInSection(sidebar, 'Предыдущие 30 дней');
-      if (!currentGroups.includes(group)) {
+      // Жесткая проверка: этот group всё ещё входит в текущие цели
+      const currentTargets = header30
+        ? findArchiveTargetsFrom30DaysAndOlder(sidebar)
+        : findArchiveTargetsMonthsOnly(sidebar);
+
+      if (!currentTargets.groups.includes(group)) {
         state.skipped += 1;
         render();
         continue;
@@ -302,12 +370,12 @@
 
       await sleep(CFG.delayBetweenChatsMs);
 
-      // После архивации DOM меняется — пересчитываем список секции заново
-      groups = findChatGroupsInSection(sidebar, 'Предыдущие 30 дней');
+      // После архивации DOM меняется — пересчитываем цели заново
+      targets = header30 ? findArchiveTargetsFrom30DaysAndOlder(sidebar) : findArchiveTargetsMonthsOnly(sidebar);
+      groups = targets.groups;
       if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
 
-      // Важно: после пересчета i указывает на "следующий" индекс, но текущий элемент уже ушел в архив,
-      // поэтому делаем шаг назад, чтобы не пропускать элементы при сжатии списка.
+      // Чтобы не пропускать элементы при сжатии списка
       i = Math.max(-1, i - 1);
     }
   };
