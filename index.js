@@ -18,11 +18,14 @@
   'use strict';
 
   const CFG = {
-    buttonText: '📦 Archive: old (30d + months)',
+    archiveButtonText: '📦 Archive: old (30d + months)',
+    deleteButtonText: '🗑️ Delete: old (30d + months)',
     stopText: '⛔ Stop',
     delayBetweenChatsMs: 350,
     delayAfterMenuOpenMs: 120,
     delayAfterArchiveClickMs: 250,
+    delayAfterDeleteClickMs: 200,
+    delayAfterConfirmDeleteMs: 250,
     maxChatsSafetyLimit: 800,
     debug: false,
   };
@@ -161,6 +164,25 @@
     return items.find((el) => textNorm(el.textContent) === 'архив') || null;
   };
 
+  const findDeleteMenuItem = (menuRoot) => {
+    if (!menuRoot) return null;
+    const items = Array.from(menuRoot.querySelectorAll('div[role="menuitem"]'));
+    return items.find((el) => textNorm(el.textContent) === 'удалить') || null;
+  };
+
+  const findDeleteConfirmModal = () => {
+    const overlays = Array.from(document.querySelectorAll('div.fixed.top-0.right-0.left-0.bottom-0.bg-black\\/60'));
+    if (!overlays.length) return null;
+    const withTitle = overlays.find((o) => textNorm(o.textContent).includes('удалить чат?'));
+    return withTitle || overlays[overlays.length - 1];
+  };
+
+  const findConfirmDeleteButton = (modalRoot) => {
+    if (!modalRoot) return null;
+    const buttons = Array.from(modalRoot.querySelectorAll('button'));
+    return buttons.find((b) => textNorm(b.textContent) === 'подтвердить') || null;
+  };
+
   const closeAnyMenu = () => {
     // Click on the page to close any open menu
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -182,13 +204,26 @@
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
     `;
 
-    const btn = document.createElement('button');
-    btn.textContent = CFG.buttonText;
-    btn.style.cssText = `
+    const archiveBtn = document.createElement('button');
+    archiveBtn.textContent = CFG.archiveButtonText;
+    archiveBtn.style.cssText = `
       padding: 10px 12px;
       border-radius: 12px;
       border: 1px solid rgba(0,0,0,0.15);
       background: #111827;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    `;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = CFG.deleteButtonText;
+    deleteBtn.style.cssText = `
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(0,0,0,0.15);
+      background: #7f1d1d;
       color: #fff;
       cursor: pointer;
       font-size: 13px;
@@ -232,30 +267,37 @@
       `;
     };
 
-    render();
-
-    btn.addEventListener('click', async () => {
+    const runWithLock = async (fn) => {
       if (state.running) return;
       state.running = true;
       state.lastError = '';
       stop.style.display = 'block';
-      btn.disabled = true;
-      btn.style.opacity = '0.7';
+      archiveBtn.disabled = true;
+      deleteBtn.disabled = true;
+      archiveBtn.style.opacity = '0.7';
+      deleteBtn.style.opacity = '0.7';
       render();
 
       try {
-        await archivePrevious30Days(render);
+        await fn(render);
       } catch (e) {
         state.errors += 1;
         state.lastError = String(e?.message || e);
       } finally {
         state.running = false;
         stop.style.display = 'none';
-        btn.disabled = false;
-        btn.style.opacity = '1';
+        archiveBtn.disabled = false;
+        deleteBtn.disabled = false;
+        archiveBtn.style.opacity = '1';
+        deleteBtn.style.opacity = '1';
         render();
       }
-    });
+    };
+
+    render();
+
+    archiveBtn.addEventListener('click', () => runWithLock(archivePrevious30Days));
+    deleteBtn.addEventListener('click', () => runWithLock(deletePrevious30Days));
 
     stop.addEventListener('click', () => {
       state.running = false;
@@ -263,7 +305,8 @@
       render();
     });
 
-    wrap.appendChild(btn);
+    wrap.appendChild(archiveBtn);
+    wrap.appendChild(deleteBtn);
     wrap.appendChild(stop);
     wrap.appendChild(stat);
     document.body.appendChild(wrap);
@@ -381,6 +424,122 @@
       if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
 
       // Avoid skipping items when the list shrinks
+      i = Math.max(-1, i - 1);
+    }
+  };
+
+  const deletePrevious30Days = async (render) => {
+    const sidebar = getSidebarScrollContainer();
+    if (!sidebar) {
+      throw new Error('Sidebar chat list container not found. Make sure the left sidebar is open.');
+    }
+
+    const header30 = findSectionHeaderInSidebar(sidebar, 'Предыдущие 30 дней');
+
+    if (header30) {
+      header30.scrollIntoView({ block: 'center' });
+      await sleep(150);
+    }
+
+    let targets = header30 ? findArchiveTargetsFrom30DaysAndOlder(sidebar) : findArchiveTargetsMonthsOnly(sidebar);
+    let groups = targets.groups;
+
+    if (!groups.length) {
+      throw new Error('No chats found to delete (months / older sections). Either not loaded yet or already deleted.');
+    }
+
+    if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
+
+    log('Found groups to delete (30d + months OR months-only):', groups.length);
+
+    for (let i = 0; i < groups.length; i++) {
+      if (!state.running) break;
+
+      const group = groups[i];
+
+      if (!document.contains(group)) {
+        state.skipped += 1;
+        render();
+        continue;
+      }
+
+      const currentTargets = header30
+        ? findArchiveTargetsFrom30DaysAndOlder(sidebar)
+        : findArchiveTargetsMonthsOnly(sidebar);
+
+      if (!currentTargets.groups.includes(group)) {
+        state.skipped += 1;
+        render();
+        continue;
+      }
+
+      group.scrollIntoView({ block: 'center' });
+      await sleep(120);
+
+      group.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      group.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      await sleep(60);
+
+      const menuBtn = findMenuButtonInGroup(group);
+      if (!menuBtn) {
+        state.skipped += 1;
+        render();
+        continue;
+      }
+
+      menuBtn.click();
+      await sleep(CFG.delayAfterMenuOpenMs);
+
+      const menuRoot = findOpenMenuRoot();
+      const deleteItem = findDeleteMenuItem(menuRoot);
+
+      if (!deleteItem) {
+        await sleep(200);
+        const menuRoot2 = findOpenMenuRoot();
+        const deleteItem2 = findDeleteMenuItem(menuRoot2);
+
+        if (!deleteItem2) {
+          state.errors += 1;
+          state.lastError = 'Could not find "Delete" menu item. UI/locale/DOM may have changed.';
+          render();
+          closeAnyMenu();
+          await sleep(150);
+          continue;
+        }
+
+        deleteItem2.click();
+      } else {
+        deleteItem.click();
+      }
+
+      await sleep(CFG.delayAfterDeleteClickMs);
+
+      const modal = findDeleteConfirmModal();
+      const confirmBtn = findConfirmDeleteButton(modal);
+
+      if (!confirmBtn) {
+        state.errors += 1;
+        state.lastError = 'Delete confirmation modal/button not found ("Подтвердить").';
+        render();
+        closeAnyMenu();
+        await sleep(150);
+        continue;
+      }
+
+      confirmBtn.click();
+      await sleep(CFG.delayAfterConfirmDeleteMs);
+
+      closeAnyMenu();
+
+      state.processed += 1;
+      render();
+
+      await sleep(CFG.delayBetweenChatsMs);
+
+      targets = header30 ? findArchiveTargetsFrom30DaysAndOlder(sidebar) : findArchiveTargetsMonthsOnly(sidebar);
+      groups = targets.groups;
+      if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
+
       i = Math.max(-1, i - 1);
     }
   };
