@@ -20,6 +20,7 @@
   const CFG = {
     archiveButtonText: '📦 Archive: old (30d + months)',
     deleteButtonText: '🗑️ Delete: old (30d + months)',
+    deleteBelow30DaysButtonText: '🗑️ Delete: Previous 30 days + older',
     stopText: '⛔ Stop',
     delayBetweenChatsMs: 350,
     delayAfterMenuOpenMs: 120,
@@ -109,6 +110,13 @@
     const startIdx = headers.indexOf(startHeader);
     const endHeader = headers[startIdx + 1] || null;
     return findChatGroupsBetweenHeaders(sidebarEl, startHeader, endHeader);
+  };
+
+  const findChatGroupsBelowHeader = (sidebarEl, sectionTitle) => {
+    const headers = getSidebarSectionHeaders(sidebarEl);
+    const startHeader = headers.find((h) => textNorm(h.textContent) === textNorm(sectionTitle));
+    if (!startHeader) return [];
+    return findChatGroupsBetweenHeaders(sidebarEl, startHeader, null);
   };
 
   const findArchiveTargetsFrom30DaysAndOlder = (sidebarEl) => {
@@ -230,6 +238,19 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.25);
     `;
 
+    const deleteBelow30DaysBtn = document.createElement('button');
+    deleteBelow30DaysBtn.textContent = CFG.deleteBelow30DaysButtonText;
+    deleteBelow30DaysBtn.style.cssText = `
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(0,0,0,0.15);
+      background: #450a0a;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    `;
+
     const stop = document.createElement('button');
     stop.textContent = CFG.stopText;
     stop.style.cssText = `
@@ -274,8 +295,10 @@
       stop.style.display = 'block';
       archiveBtn.disabled = true;
       deleteBtn.disabled = true;
+      deleteBelow30DaysBtn.disabled = true;
       archiveBtn.style.opacity = '0.7';
       deleteBtn.style.opacity = '0.7';
+      deleteBelow30DaysBtn.style.opacity = '0.7';
       render();
 
       try {
@@ -288,8 +311,10 @@
         stop.style.display = 'none';
         archiveBtn.disabled = false;
         deleteBtn.disabled = false;
+        deleteBelow30DaysBtn.disabled = false;
         archiveBtn.style.opacity = '1';
         deleteBtn.style.opacity = '1';
+        deleteBelow30DaysBtn.style.opacity = '1';
         render();
       }
     };
@@ -298,6 +323,7 @@
 
     archiveBtn.addEventListener('click', () => runWithLock(archivePrevious30Days));
     deleteBtn.addEventListener('click', () => runWithLock(deletePrevious30Days));
+    deleteBelow30DaysBtn.addEventListener('click', () => runWithLock(deleteBelow30Days));
 
     stop.addEventListener('click', () => {
       state.running = false;
@@ -307,6 +333,7 @@
 
     wrap.appendChild(archiveBtn);
     wrap.appendChild(deleteBtn);
+    wrap.appendChild(deleteBelow30DaysBtn);
     wrap.appendChild(stop);
     wrap.appendChild(stat);
     document.body.appendChild(wrap);
@@ -538,6 +565,122 @@
 
       targets = header30 ? findArchiveTargetsFrom30DaysAndOlder(sidebar) : findArchiveTargetsMonthsOnly(sidebar);
       groups = targets.groups;
+      if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
+
+      i = Math.max(-1, i - 1);
+    }
+  };
+
+  const deleteBelow30Days = async (render) => {
+    const sidebar = getSidebarScrollContainer();
+    if (!sidebar) {
+      throw new Error('Sidebar chat list container not found. Make sure the left sidebar is open.');
+    }
+
+    const header30 = findSectionHeaderInSidebar(sidebar, 'Предыдущие 30 дней');
+    if (!header30) {
+      throw new Error('Section header "Предыдущие 30 дней" not found. Make sure the sidebar is loaded and locale is RU.');
+    }
+
+    header30.scrollIntoView({ block: 'center' });
+    await sleep(150);
+
+    // "Previous 30 days + older" = everything after the "Предыдущие 30 дней" header
+    // (including chats in that section and all older sections)
+    let groups = findChatGroupsBelowHeader(sidebar, 'Предыдущие 30 дней');
+
+    if (!groups.length) {
+      throw new Error('No chats found below "Предыдущие 30 дней".');
+    }
+
+    if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
+
+    log('Found groups to delete (Previous 30 days + older):', groups.length);
+
+    for (let i = 0; i < groups.length; i++) {
+      if (!state.running) break;
+
+      const group = groups[i];
+
+      if (!document.contains(group)) {
+        state.skipped += 1;
+        render();
+        continue;
+      }
+
+      // Re-check membership after DOM changes
+      const currentGroups = findChatGroupsBelowHeader(sidebar, 'Предыдущие 30 дней');
+      if (!currentGroups.includes(group)) {
+        state.skipped += 1;
+        render();
+        continue;
+      }
+
+      group.scrollIntoView({ block: 'center' });
+      await sleep(120);
+
+      group.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      group.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      await sleep(60);
+
+      const menuBtn = findMenuButtonInGroup(group);
+      if (!menuBtn) {
+        state.skipped += 1;
+        render();
+        continue;
+      }
+
+      menuBtn.click();
+      await sleep(CFG.delayAfterMenuOpenMs);
+
+      const menuRoot = findOpenMenuRoot();
+      const deleteItem = findDeleteMenuItem(menuRoot);
+
+      if (!deleteItem) {
+        await sleep(200);
+        const menuRoot2 = findOpenMenuRoot();
+        const deleteItem2 = findDeleteMenuItem(menuRoot2);
+
+        if (!deleteItem2) {
+          state.errors += 1;
+          state.lastError = 'Could not find "Delete" menu item. UI/locale/DOM may have changed.';
+          render();
+          closeAnyMenu();
+          await sleep(150);
+          continue;
+        }
+
+        deleteItem2.click();
+      } else {
+        deleteItem.click();
+      }
+
+      await sleep(CFG.delayAfterDeleteClickMs);
+
+      const modal = findDeleteConfirmModal();
+      const confirmBtn = findConfirmDeleteButton(modal);
+
+      if (!confirmBtn) {
+        state.errors += 1;
+        state.lastError = 'Delete confirmation modal/button not found ("Подтвердить").';
+        render();
+        closeAnyMenu();
+        await sleep(150);
+        continue;
+      }
+
+      confirmBtn.click();
+      await sleep(CFG.delayAfterConfirmDeleteMs);
+
+      closeAnyMenu();
+
+      state.processed += 1;
+      render();
+
+      await sleep(CFG.delayBetweenChatsMs);
+
+      // Recompute list after deletion
+      groups = findChatGroupsBelowHeader(sidebar, 'Предыдущие 30 дней');
       if (groups.length > CFG.maxChatsSafetyLimit) groups = groups.slice(0, CFG.maxChatsSafetyLimit);
 
       i = Math.max(-1, i - 1);
